@@ -1,15 +1,21 @@
 import Chat from "@/components/Chat/Chat";
 import AuthWrapper from "../../AuthWrapper";
 import { Metadata } from "next";
-// import { Params } from "next/dist/shared/lib/router/utils"; // Optional helper
 import { ResolvingMetadata } from "next";
+import { type FC } from "react";
+export const dynamic = "force-dynamic";
 
-// Next.js provides the correct typing for route params
+type Props = {
+  params: {
+    id: string;
+  };
+};
+
 export async function generateMetadata(
-  { params }: { params: { id: string } },
+  props: Props,
   _parent: ResolvingMetadata
 ): Promise<Metadata> {
-  const { id } = params;
+  const id = props.params.id;
 
   if (!id) {
     return {
@@ -46,13 +52,11 @@ export async function generateMetadata(
   };
 }
 
-// No need for a custom PageProps type, just use the implicit params
-const ChatPage = ({ params }: { params: { id: string } }) => {
-  const { id } = params;
-
+// ✅ Page component accepts dynamic route props cleanly
+const ChatPage: FC<Props> = ({ params }) => {
   return (
     <AuthWrapper>
-      <Chat id={id} />
+      <Chat id={params.id} />
     </AuthWrapper>
   );
 };

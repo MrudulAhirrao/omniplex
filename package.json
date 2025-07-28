@@ -65,6 +65,6 @@
     "postcss-import": "^16.1.0",
     "postcss-nesting": "^12.1.1",
     "tailwindcss": "^3.3.0",
-    "typescript": "^5"
+    "typescript": "^5.8.3"
   }
 }
