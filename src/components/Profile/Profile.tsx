@@ -1,3 +1,4 @@
+"use client";
 import React, { useState } from "react";
 import styles from "./Profile.module.css";
 import Image from "next/image";
@@ -10,8 +11,8 @@ import { useDispatch, useSelector } from "react-redux";
 import { resetAISettings } from "@/store/aiSlice";
 import { resetChat } from "@/store/chatSlice";
 import { resetAuth, selectUserDetailsState } from "@/store/authSlice";
-
 import User from "../../../public/svgs/sidebar/User.svg";
+import SubscriptionModal from "../SubscriptionModal/SubscriptionModal";
 
 type Props = {
   close: () => void;
@@ -22,6 +23,7 @@ const Plugins = (props: Props) => {
   const dispatch = useDispatch();
   const userDetails = useSelector(selectUserDetailsState);
   const { isOpen, onOpen, onClose } = useDisclosure();
+  const [isSubModalOpen, setSubModalOpen] = useState(false);
 
   const handleLogout = async () => {
     const auth = getAuth();
@@ -57,17 +59,31 @@ const Plugins = (props: Props) => {
               src={userDetails.profilePic ? userDetails.profilePic : User}
               width={150}
               height={150}
-              alt="Profile Empty"
+              alt="Profile Image"
               className={styles.profileImage}
             />
             <div className={styles.profileTextContainer}>
-              <div className={styles.profileHeader}>Name</div>
+              <div className={styles.profileHeader}>
+                Name{" "}
+                {userDetails.isPro && (
+                  <span className={styles.proBadge}>Pro</span>
+                )}
+              </div>
               <div className={styles.profileText}>{userDetails.name}</div>
               <div className={styles.profileHeader}>Email</div>
               <div className={styles.profileText}>{userDetails.email}</div>
             </div>
           </div>
           <div className={styles.bottomContainer}>
+            {!userDetails.isPro && (
+              <button
+                onClick={() => setSubModalOpen(true)}
+                className={styles.subscribeButton}
+              >
+                Subscribe to Pro
+              </button>
+            )}
+
             <div onClick={handleLogout} className={styles.button}>
               Log Out
             </div>
@@ -78,6 +94,12 @@ const Plugins = (props: Props) => {
         </div>
       </ScrollShadow>
       <Delete isOpen={isOpen} onClose={onClose} delete={handleLogout} />
+      {isSubModalOpen && (
+        <SubscriptionModal
+          isOpen={isSubModalOpen}
+          onClose={() => setSubModalOpen(false)}
+        />
+      )}
     </div>
   );
 };

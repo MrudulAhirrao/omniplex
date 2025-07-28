@@ -42,7 +42,7 @@ const Chat = (props: Props) => {
   const [isCompleted, setIsCompleted] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState("");
-  const [errorFunction, setErrorFunction] = useState<Function | null>(null);
+  const [errorFunction, setErrorFunction] = useState<(() => Promise<any>) | null>(null);
 
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
@@ -319,12 +319,15 @@ const Chat = (props: Props) => {
         );
         setError("");
 
-        const data = searchData?.data?.webPages?.value?.slice(0, 3);
+        const data = searchData?.data?.organic_results?.slice(0, 3);
+
         if (!data || data.length === 0) {
           throw new Error("No valid search results found to scrape.");
         }
 
-        const urlsToScrape = data.map((item: any) => item.url).join(",");
+        const urlsToScrape = data.map((item: any) => item.link).join(",");
+        console.log("Full SerpAPI result:", searchData?.data);
+
         const scrapeResponse = await fetch(`/api/scrape?urls=${urlsToScrape}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

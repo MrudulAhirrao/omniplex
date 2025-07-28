@@ -10,19 +10,26 @@ const AuthWrapper = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     const auth = getAuth();
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        dispatch(setAuthState(true));
-        dispatch(
-          setUserDetailsState({
-            uid: user.uid,
-            name: user.displayName ?? "",
-            email: user.email ?? "",
-            profilePic: user.photoURL ?? "",
-          })
-        );
-      } else {
-        console.log("User is signed out");
+      try {
+        if (user) {
+          dispatch(setAuthState(true));
+          dispatch(
+            setUserDetailsState({
+              uid: user.uid,
+              name: user.displayName ?? "",
+              email: user.email ?? "",
+              profilePic: user.photoURL ?? "",
+            })
+          );
+          console.log("User signed in:", user.email);
+        } else {
+          dispatch(setAuthState(false));
+          console.log("User is signed out");
+        }
+      } catch (err) {
+        console.error("Auth state error:", err);
       }
     });
 

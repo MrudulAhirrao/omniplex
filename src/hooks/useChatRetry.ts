@@ -1,28 +1,28 @@
 import { useCallback } from "react";
 import toast from "react-hot-toast";
 
+const delayPromise = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 const useChatRetry = () => {
   const handleRetry = useCallback(
     async (
-      func: Function,
+      func: (...args: any[]) => Promise<any>,
       maxRetries = 3,
       args: any[] = [],
-      delay = 1000
+      delay = 1000,
+      exponentialBackoff = true
     ): Promise<any> => {
-      let attempts = 0;
-
-      while (attempts < maxRetries) {
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
           return await func(...args);
-        } catch (error) {
-          attempts += 1;
-          console.error(
-            `Error in function: ${func.name}, Retry attempt: ${attempts}`
-          );
-          if (attempts < maxRetries) {
-            await new Promise((resolve) => setTimeout(resolve, delay));
+        } catch (error: unknown) {
+          console.error(`Error in ${func.name} (attempt ${attempt}):`, error);
+
+          if (attempt < maxRetries) {
+            const waitTime = exponentialBackoff ? delay * Math.pow(2, attempt - 1) : delay;
+            await delayPromise(waitTime);
           } else {
-            toast.error("Max retries reached. Please try again later.", {
+            toast.error("Something went wrong. Please try again later.", {
               position: "top-center",
               style: {
                 padding: "6px 18px",

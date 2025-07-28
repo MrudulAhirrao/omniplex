@@ -7,10 +7,19 @@ const FORECAST_URL = "https://api.openweathermap.org/data/2.5/forecast";
 
 export const runtime = "edge";
 
-function formatTime(hour: number) {
+const MAX_FORECAST_HOURS = 5;
+const DAILY_HOURS = 8;
+
+function formatTime(hour: number): string {
   const amPm = hour >= 12 ? "PM" : "AM";
   const formattedHour = hour % 12 || 12;
   return `${formattedHour} ${amPm}`;
+}
+
+async function fetchJson(url: string): Promise<any> {
+  const res = await fetch(url, { method: "GET" });
+  if (!res.ok) throw new Error(`Fetch failed with status ${res.status}`);
+  return res.json();
 }
 
 export async function GET(req: NextRequest) {
@@ -18,72 +27,53 @@ export async function GET(req: NextRequest) {
   const city = searchParams.get("city");
 
   if (!city || typeof city !== "string") {
-    return new NextResponse(
-      JSON.stringify({
+    return NextResponse.json(
+      {
         message: 'Query parameter "city" is required and must be a string.',
-      }),
+      },
       { status: 400 }
     );
   }
 
   if (!OPENWEATHERMAP_API_KEY) {
-    console.error(
-      "OpenWeatherMap API key is undefined. Please check your .env.local file."
-    );
-    return new NextResponse(
-      JSON.stringify({ message: "OpenWeatherMap API key is not configured." }),
+    console.error("Missing OpenWeatherMap API key in environment variables.");
+    return NextResponse.json(
+      { message: "OpenWeatherMap API key is not configured." },
       { status: 500 }
     );
   }
 
   try {
-    const geoResponse = await fetch(
-      `${GEOCODING_URL}?q=${encodeURIComponent(
-        city
-      )}&limit=1&appid=${OPENWEATHERMAP_API_KEY}`,
-      { method: "GET" }
-    );
+    const geoUrl = `${GEOCODING_URL}?q=${encodeURIComponent(
+      city
+    )}&limit=1&appid=${OPENWEATHERMAP_API_KEY}`;
+    const geoData = await fetchJson(geoUrl);
 
-    if (!geoResponse.ok) {
-      throw new Error(
-        `Geocoding API request failed with status ${geoResponse.status}`
-      );
-    }
-
-    const geoData = await geoResponse.json();
-    if (geoData.length === 0) {
-      return new NextResponse(JSON.stringify({ message: "City not found." }), {
-        status: 404,
-      });
+    if (!geoData?.length) {
+      return NextResponse.json({ message: "City not found." }, { status: 404 });
     }
 
     const { name: cityName, lat, lon } = geoData[0];
 
-    const currentWeatherResponse = await fetch(
-      `${CURRENT_WEATHER_URL}?lat=${lat}&lon=${lon}&units=metric&appid=${OPENWEATHERMAP_API_KEY}`,
-      { method: "GET" }
-    );
+    const [currentWeatherData, forecastData] = await Promise.all([
+      fetchJson(
+        `${CURRENT_WEATHER_URL}?lat=${lat}&lon=${lon}&units=metric&appid=${OPENWEATHERMAP_API_KEY}`
+      ),
+      fetchJson(
+        `${FORECAST_URL}?lat=${lat}&lon=${lon}&units=metric&appid=${OPENWEATHERMAP_API_KEY}`
+      ),
+    ]);
 
-    if (!currentWeatherResponse.ok) {
-      throw new Error(
-        `Current Weather API request failed with status ${currentWeatherResponse.status}`
-      );
-    }
+    const hourly = forecastData.list.slice(0, MAX_FORECAST_HOURS).map((hour: any) => ({
+      time: formatTime(new Date(hour.dt * 1000).getHours()),
+      temperature: Math.round(hour.main.temp),
+      weather: hour.weather[0].main,
+      icon: hour.weather[0].icon,
+    }));
 
-    const currentWeatherData = await currentWeatherResponse.json();
-
-    const forecastResponse = await fetch(
-      `${FORECAST_URL}?lat=${lat}&lon=${lon}&units=metric&appid=${OPENWEATHERMAP_API_KEY}`,
-      { method: "GET" }
-    );
-
-    if (!forecastResponse.ok) {
-      throw new Error(
-        `Forecast API request failed with status ${forecastResponse.status}`
-      );
-    }
-
-    const forecastData = await forecastResponse.json();
+    const firstDayTemps = forecastData.list.slice(0, DAILY_HOURS);
+    const maxTemp = Math.round(Math.max(...firstDayTemps.map((h: any) => h.main.temp_max)));
+    const minTemp = Math.round(Math.min(...firstDayTemps.map((h: any) => h.main.temp_min)));
 
     const data = {
       city: cityName,
@@ -93,36 +83,16 @@ export async function GET(req: NextRequest) {
         description: currentWeatherData.weather[0].description,
         icon: currentWeatherData.weather[0].icon,
       },
-      hourly: forecastData.list.slice(0, 5).map((hour: any) => ({
-        time: formatTime(new Date(hour.dt * 1000).getHours()),
-        temperature: Math.round(hour.main.temp),
-        weather: hour.weather[0].main,
-        icon: hour.weather[0].icon,
-      })),
+      hourly,
       daily: {
-        maxTemp: Math.round(
-          Math.max(
-            ...forecastData.list
-              .slice(0, 8)
-              .map((item: any) => item.main.temp_max)
-          )
-        ),
-        minTemp: Math.round(
-          Math.min(
-            ...forecastData.list
-              .slice(0, 8)
-              .map((item: any) => item.main.temp_min)
-          )
-        ),
+        maxTemp,
+        minTemp,
       },
     };
 
     return NextResponse.json(data);
   } catch (error) {
-    console.error("API request error:", error);
-    return new NextResponse(
-      JSON.stringify({ message: "Internal Server Error" }),
-      { status: 500 }
-    );
+    console.error("Weather API error:", error);
+    return NextResponse.json({ message: "Internal Server Error" }, { status: 500 });
   }
 }

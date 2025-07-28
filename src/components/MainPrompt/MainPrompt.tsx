@@ -260,8 +260,8 @@ const MainPrompt = () => {
                 isOpen={open}
                 onOpenChange={(open) => setOpen(open)}
               >
-                <PopoverTrigger>
-                  <div className={styles.button}>
+                <PopoverTrigger className={styles.popoverTrigger}>
+                  <button className={styles.button}>
                     <Image
                       src={focus.icon}
                       alt="Filter"
@@ -269,7 +269,7 @@ const MainPrompt = () => {
                       height={18}
                     />
                     <p className={styles.buttonText}>{focus.website}</p>
-                  </div>
+                  </button>
                 </PopoverTrigger>
                 <PopoverContent className={styles.popoverContainer}>
                   <div className={styles.popover}>

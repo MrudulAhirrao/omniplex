@@ -1,55 +1,68 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const BING_API_KEY = process.env.BING_API_KEY;
-const BING_SEARCH_URL = "https://api.bing.microsoft.com/v7.0/search";
 
 export const runtime = "edge";
-
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const q = searchParams.get("q");
+  const query = searchParams.get("q");
 
-  if (!q || typeof q !== "string") {
+  // Validation: Missing or invalid query
+  if (!query || typeof query !== "string") {
     return new NextResponse(
       JSON.stringify({
-        message: 'Query parameter "q" is required and must be a string.',
+        error: 'Missing or invalid "q" parameter in the URL.',
       }),
-      { status: 400 }
+      { status: 400, headers: { "Content-Type": "application/json" } }
     );
   }
 
   if (!BING_API_KEY) {
-    console.error(
-      "Bing API key is undefined. Please check your .env.local file."
-    );
+    console.error("[Search API] BING_API_KEY is not set in .env.local");
     return new NextResponse(
-      JSON.stringify({ message: "Bing API key is not configured." }),
-      { status: 500 }
+      JSON.stringify({
+        error: "Search API key is not configured on the server.",
+      }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
 
   try {
-    const response = await fetch(
-      `${BING_SEARCH_URL}?q=${encodeURIComponent(q)}`,
-      {
-        method: "GET",
-        headers: new Headers({
-          "Ocp-Apim-Subscription-Key": BING_API_KEY,
-        }),
-      }
-    );
+    const serpApiUrl = `https://serpapi.com/search.json?engine=bing&q=${encodeURIComponent(
+      query
+    )}&cc=US&api_key=${BING_API_KEY}`;
 
+    const response = await fetch(serpApiUrl);
+
+    // If SerpAPI fails
     if (!response.ok) {
-      throw new Error(`API request failed with status ${response.status}`);
+      console.error(`[Search API] Failed with status ${response.status}`);
+      return new NextResponse(
+        JSON.stringify({
+          error: `Search API error. Status code: ${response.status}`,
+        }),
+        { status: response.status, headers: { "Content-Type": "application/json" } }
+      );
     }
 
-    const data = await response.json();
-    return NextResponse.json({ message: "Success", data });
-  } catch (error) {
-    console.error("Bing API request error:", error);
+    const result = await response.json();
+
+    // Success response
     return new NextResponse(
-      JSON.stringify({ message: "Internal Server Error" }),
-      { status: 500 }
+      JSON.stringify({
+        message: "Search results fetched successfully.",
+        data: result,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  } catch (error: any) {
+    console.error("[Search API] Unexpected error:", error);
+    return new NextResponse(
+      JSON.stringify({
+        error: "Internal Server Error. Failed to fetch search results.",
+        detail: error.message,
+      }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
 }

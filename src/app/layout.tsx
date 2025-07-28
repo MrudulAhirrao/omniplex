@@ -1,10 +1,10 @@
-import type { Metadata } from "next";
-import type { Viewport } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { Providers } from "./providers";
 import "katex/dist/katex.min.css";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar/Sidebar";
+import AuthWrapper from "./AuthWrapper";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -56,15 +56,19 @@ export const viewport: Viewport = {
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="en" className="dark">
-      <body className={inter.className}>
+      <body className={`${inter.className} min-h-screen bg-background text-foreground`}>
         <Providers>
-          <Sidebar />
-          {children}
+          <AuthWrapper>
+            <div className="flex min-h-screen">
+              <Sidebar />
+              <main className="flex-1 overflow-y-auto">{children}</main>
+            </div>
+          </AuthWrapper>
         </Providers>
       </body>
     </html>

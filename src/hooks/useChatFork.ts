@@ -1,7 +1,7 @@
 import { useDispatch, useSelector } from "react-redux";
 import { useRouter } from "next/navigation";
 import { nanoid } from "nanoid";
-import { collection, setDoc, doc } from "firebase/firestore";
+import { collection, setDoc, doc, serverTimestamp } from "firebase/firestore";
 import { db } from "../../firebaseConfig";
 import { addChatThread, selectChatThread } from "@/store/chatSlice";
 import { RootState } from "@/store/store";
@@ -14,40 +14,33 @@ const useChatFork = (threadId: string) => {
   const chatThread = useSelector((state: RootState) =>
     selectChatThread(state, threadId)
   );
-  const userDetails = useSelector(selectUserDetailsState);
-  const userId = userDetails.uid;
+  const { uid: userId } = useSelector(selectUserDetailsState);
 
   const handleFork = useCallback(async () => {
-    if (!chatThread) {
-      console.log("No chat thread to fork");
+    if (!chatThread || !userId) {
+      console.warn("Missing chat thread or user ID");
       return;
     }
 
     try {
-      const newChatThreadId = nanoid(10);
+      const newId = nanoid(10);
+      const newThreadRef = doc(collection(db, "users", userId, "history"), newId);
 
-      if (userId) {
-        const historyRef = collection(db, "users", userId, "history");
-        await setDoc(doc(historyRef, newChatThreadId), {
-          chats: chatThread.chats,
-          messages: chatThread.messages,
-          createdAt: new Date(),
-        });
-      }
+      const threadData = {
+        chats: chatThread.chats,
+        messages: chatThread.messages,
+        createdAt: serverTimestamp(),
+      };
 
-      dispatch(
-        addChatThread({
-          id: newChatThreadId,
-          chats: chatThread.chats,
-          messages: chatThread.messages,
-        })
-      );
+      await setDoc(newThreadRef, threadData);
 
-      router.push(`/chat/${newChatThreadId}`);
+      dispatch(addChatThread({ id: newId, chats: chatThread.chats, messages: chatThread.messages }));
+
+      router.push(`/chat/${newId}`);
     } catch (error) {
       console.error("Error forking chat thread:", error);
     }
-  }, [chatThread, dispatch, router, userId]);
+  }, [chatThread, userId, dispatch, router]);
 
   return { handleFork };
 };

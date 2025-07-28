@@ -2,50 +2,53 @@ import type { NextRequest } from "next/server";
 
 export const runtime = "edge";
 
+// --- In-memory cache to reduce redundant scraping ---
+const cache = new Map<string, string>();
+
+// --- Extract visible body text from HTML ---
+function extractBodyText(html: string): string {
+  const bodyStart = html.indexOf("<body");
+  const bodyEnd = html.indexOf("</body>", bodyStart);
+
+  if (bodyStart === -1 || bodyEnd === -1) return "";
+
+  const bodyContent = html.slice(bodyStart, bodyEnd + 7);
+
+  return bodyContent
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<[^>]+>/g, "") // Remove HTML tags
+    .replace(/\s+/g, " ") // Collapse whitespace
+    .trim()
+    .slice(0, 5000); // Limit to 5000 chars
+}
+
+// --- Fetch and parse body text from a URL ---
 async function scrapeText(url: string): Promise<string> {
   try {
     const response = await fetch(url);
+
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      console.error(`[${url}] HTTP error: ${response.status}`);
+      return "";
     }
+
     const html = await response.text();
-    const text = extractBodyText(html);
-    return text;
-  } catch (error) {
-    console.error(`Error fetching URL ${url}:`, error);
+    return extractBodyText(html);
+  } catch (err) {
+    console.error(`[${url}] Fetch failed:`, err);
     return "";
   }
 }
 
-function extractBodyText(html: string): string {
-  const bodyStartTag = "<body";
-  const bodyEndTag = "</body>";
-  const bodyStartIndex = html.indexOf(bodyStartTag);
-  const bodyEndIndex = html.indexOf(bodyEndTag, bodyStartIndex);
-  if (bodyStartIndex !== -1 && bodyEndIndex !== -1) {
-    const bodyContent = html.slice(
-      bodyStartIndex,
-      bodyEndIndex + bodyEndTag.length
-    );
-    const bodyText = bodyContent
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<[^>]+>/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-    return bodyText.slice(0, 5000);
-  }
-  return "";
-}
+// --- POST handler to scrape multiple URLs ---
+export async function POST(req: NextRequest): Promise<Response> {
+  const query = new URL(req.url).searchParams;
+  const urls = query.get("urls")?.split(",").map(url => url.trim()).filter(Boolean) ?? [];
 
-const cache = new Map<string, string>();
-
-export async function POST(req: NextRequest) {
-  const urlParams = new URL(req.url).searchParams;
-  const urls = urlParams.get("urls")?.split(",") ?? [];
   if (urls.length === 0) {
     return new Response(
-      JSON.stringify({ error: "Please provide URLs to scrape" }),
+      JSON.stringify({ error: "Please provide valid URLs as a comma-separated list." }),
       {
         status: 400,
         headers: { "Content-Type": "application/json" },
@@ -54,26 +57,27 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const scrapingPromises = urls.map(async (url) => {
-      if (cache.has(url)) {
-        return cache.get(url);
-      }
-      const text = await scrapeText(url);
-      cache.set(url, text);
-      return text;
-    });
-    const results = await Promise.all(scrapingPromises);
-    const formattedResponse = results
-      .map((result, index) => `${urls[index]}\nWebsite data: ${result}`)
+    const results = await Promise.all(
+      urls.map(async (url) => {
+        if (cache.has(url)) return cache.get(url) || "";
+        const data = await scrapeText(url);
+        cache.set(url, data);
+        return data;
+      })
+    );
+
+    const output = urls
+      .map((url, i) => `${url}\nWebsite Data:\n${results[i]}`)
       .join("\n\n");
-    return new Response(formattedResponse, {
+
+    return new Response(output, {
       status: 200,
       headers: { "Content-Type": "text/plain" },
     });
   } catch (error) {
     console.error("Scraping error:", error);
     return new Response(
-      JSON.stringify({ error: `Failed to scrape the pages: ${error}` }),
+      JSON.stringify({ error: "Something went wrong while scraping." }),
       {
         status: 500,
         headers: { "Content-Type": "application/json" },

@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -18,7 +20,7 @@ type UseChatAnswerProps = {
   threadId: string;
   chatThread: ChatThread;
   setError: (error: string) => void;
-  setErrorFunction: (fn: Function | null) => void;
+  setErrorFunction: (fn: (() => Promise<any>) | null) => void;
   setIsStreaming: (isStreaming: boolean) => void;
   setIsLoading: (isLoading: boolean) => void;
   setIsCompleted: (isCompleted: boolean) => void;
@@ -41,40 +43,38 @@ const useChatAnswer = ({
   const [controller, setController] = useState<AbortController | null>(null);
 
   const handleSave = async () => {
-    if (userId) {
-      try {
-        const updatedState = store.getState();
-        const updatedChatThread = selectChatThread(updatedState, threadId);
-        const updatedChats = updatedChatThread?.chats || [];
-        const updatedMessages = updatedChatThread?.messages || [];
-        if (userId) {
-          try {
-            const chatThreadRef = doc(db, "users", userId, "history", threadId);
-            await updateDoc(chatThreadRef, {
-              messages: updatedMessages,
-              chats: updatedChats,
-            });
-          } catch (error) {
-            console.error("Error updating chat thread in Firestore:", error);
-          }
-        }
-      } catch (error) {
-        console.error("Error updating Firestore DB:", error);
+    try {
+      const updatedState = store.getState();
+      const updatedChatThread = selectChatThread(updatedState, threadId);
+      const updatedChats = updatedChatThread?.chats || [];
+      const updatedMessages = updatedChatThread?.messages || [];
+
+      if (userId && updatedChats && updatedMessages) {
+        const chatThreadRef = doc(db, "users", userId, "history", threadId);
+        await updateDoc(chatThreadRef, {
+          messages: updatedMessages,
+          chats: updatedChats,
+        });
       }
+    } catch (error) {
+      console.error("Error updating Firestore:", error);
     }
   };
 
   const handleAnswer = async (chat: ChatType, data?: string) => {
+    const abortCtrl = new AbortController();
+    setController(abortCtrl);
+
     setIsLoading(true);
     setIsCompleted(false);
-    const newController = new AbortController();
-    setController(newController);
 
-    let messages = getInitialMessages(chat, data);
+    const messages = getInitialMessages(chat, data);
+
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: abortCtrl.signal,
         body: JSON.stringify({
           messages,
           model: chat?.mode === "image" ? "gpt-4o" : ai.model,
@@ -84,88 +84,87 @@ const useChatAnswer = ({
           frequency_penalty: ai.frequency,
           presence_penalty: ai.presence,
         }),
-        signal: newController.signal,
       });
 
       if (!response.ok) {
         setError("Something went wrong. Please try again later.");
-        setErrorFunction(() => handleAnswer.bind(null, chat, data));
+        // FIX: Removed extra function wrapper
+        setErrorFunction(() => handleAnswer(chat, data));
         return;
       }
 
+      setError("");
       setIsLoading(false);
+      setIsStreaming(true);
+
       if (response.body) {
-        setError("");
-        setIsStreaming(true);
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let answer = "";
+
         while (true) {
           const { value, done } = await reader.read();
-          const text = decoder.decode(value);
-          answer += text;
+          answer += decoder.decode(value);
           dispatch(
             updateAnswer({
               threadId,
               chatIndex: chatThread.chats.length - 1,
-              answer: answer,
+              answer,
             })
           );
-          if (done) {
-            break;
-          }
+          if (done) break;
         }
+
         dispatch(
           addMessage({
             threadId,
             message: { role: "assistant", content: answer },
           })
         );
-        setIsStreaming(false);
         setIsCompleted(true);
         handleSave();
       }
-    } catch (error) {
-      setIsLoading(false);
-      setIsStreaming(false);
-      setIsCompleted(true);
-      if ((error as Error).name === "AbortError") {
+    } catch (error: any) {
+      if (error.name === "AbortError") {
         await handleSave();
-        return;
+      } else {
+        console.error("Error during handleAnswer:", error);
+        setError("Something went wrong. Please try again later.");
+        // FIX: Removed extra function wrapper
+        setErrorFunction(() => handleAnswer(chat, data));
       }
-      setError("Something went wrong. Please try again later.");
-      setErrorFunction(() => handleAnswer.bind(null, chat, data));
     } finally {
+      setIsStreaming(false);
+      setIsLoading(false);
       setController(null);
     }
   };
 
   const handleRewrite = async () => {
+    if (!chatThread.chats.length || !chatThread.chats.at(-1)?.answer) return;
+
+    const abortCtrl = new AbortController();
+    setController(abortCtrl);
+
     setIsLoading(true);
     setIsCompleted(false);
-    const newController = new AbortController();
-    setController(newController);
 
-    const lastChat = chatThread.chats[chatThread.chats.length - 1];
+    const lastChat = chatThread.chats.at(-1)!;
     const lastUserMessage = chatThread.messages.findLast(
-      (message) => message.role === "user"
+      (msg) => msg.role === "user"
     );
-
-    if (!lastChat.answer) {
-      return;
-    }
 
     const messages: Message[] = [];
+
     const systemMessage = chatThread.messages.find(
-      (message) => message.role === "system"
+      (msg) => msg.role === "system"
     );
-    if (systemMessage) {
-      messages.push(systemMessage);
-    }
-    chatThread.chats.slice(0, -1).forEach((prevChat) => {
-      messages.push({ role: "user", content: prevChat.question });
-      if (prevChat.answer) {
-        messages.push({ role: "assistant", content: prevChat.answer });
+    if (systemMessage) messages.push(systemMessage);
+
+    chatThread.chats.slice(0, -1).forEach((c) => {
+      messages.push({ role: "user", content: c.question });
+      if (c.answer) {
+        messages.push({ role: "assistant", content: c.answer });
       }
     });
 
@@ -185,6 +184,7 @@ const useChatAnswer = ({
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: abortCtrl.signal,
         body: JSON.stringify({
           messages,
           model: lastChat.mode === "image" ? "gpt-4o" : ai.model,
@@ -194,74 +194,72 @@ const useChatAnswer = ({
           frequency_penalty: ai.frequency,
           presence_penalty: ai.presence,
         }),
-        signal: newController.signal,
       });
 
       if (!response.ok) {
         setError("Something went wrong. Please try again later.");
-        setErrorFunction(() => handleRewrite);
+        // FIX: Removed extra function wrapper
+        setErrorFunction(handleRewrite);
         return;
       }
 
+      setError("");
       setIsLoading(false);
+      setIsStreaming(true);
+
       if (response.body) {
-        setError("");
-        setIsStreaming(true);
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let answer = "";
+
         while (true) {
           const { value, done } = await reader.read();
-          const text = decoder.decode(value);
-          answer += text;
+          answer += decoder.decode(value);
           dispatch(
             updateAnswer({
               threadId,
               chatIndex: chatThread.chats.length - 1,
-              answer: answer,
+              answer,
             })
           );
-          if (done) {
-            break;
-          }
+          if (done) break;
         }
-        const lastAssistantMessageIndex = chatThread.messages.findLastIndex(
-          (message) => message.role === "assistant"
+
+        const lastAssistantIndex = chatThread.messages.findLastIndex(
+          (msg) => msg.role === "assistant"
         );
 
-        if (lastAssistantMessageIndex !== -1) {
+        if (lastAssistantIndex !== -1) {
           dispatch(
             updateMessage({
               threadId,
-              messageIndex: lastAssistantMessageIndex,
+              messageIndex: lastAssistantIndex,
               message: { role: "assistant", content: answer },
             })
           );
         }
-        setIsStreaming(false);
+
         setIsCompleted(true);
         handleSave();
       }
-    } catch (error) {
-      setIsLoading(false);
-      setIsStreaming(false);
-      setIsCompleted(true);
-      if ((error as Error).name === "AbortError") {
+    } catch (error: any) {
+      if (error.name === "AbortError") {
         await handleSave();
-        return;
+      } else {
+        console.error("Error during handleRewrite:", error);
+        setError("Something went wrong. Please try again later.");
+        setErrorFunction(handleRewrite);
       }
-      setError("Something went wrong. Please try again later.");
-      setErrorFunction(() => handleRewrite);
     } finally {
+      setIsStreaming(false);
+      setIsLoading(false);
       setController(null);
     }
   };
 
   const handleCancel = () => {
-    if (controller) {
-      controller.abort();
-      setIsStreaming(false);
-    }
+    controller?.abort();
+    setIsStreaming(false);
   };
 
   return {

@@ -20,63 +20,63 @@ const useChatFetch = (id: string) => {
   const fetchChatThread = useCallback(async () => {
     setIsFetching(true);
     try {
-      const indexDocRef = doc(db, "index", id);
-      const indexDocSnapshot = await getDoc(indexDocRef);
+      const indexRef = doc(db, "index", id);
+      const indexSnap = await getDoc(indexRef);
 
-      if (indexDocSnapshot.exists()) {
-        const { userId: indexUserId } = indexDocSnapshot.data();
-        const chatThreadRef = doc(db, "users", indexUserId, "history", id);
-        const chatThreadDoc = await getDoc(chatThreadRef);
+      if (!indexSnap.exists()) {
+        dispatch(removeChatThread(id));
+        setIsFetching(false);
+        return;
+      }
 
-        if (chatThreadDoc.exists()) {
-          const chatThreadData = chatThreadDoc.data();
-          const isShared = chatThreadData.userId !== indexUserId;
+      const { userId: indexUserId } = indexSnap.data();
+      const threadRef = doc(db, "users", indexUserId, "history", id);
+      const threadSnap = await getDoc(threadRef);
 
-          if (isShared && chatThread) {
-            dispatch(
-              updateChatThread({
-                id,
-                chats: chatThreadData.chats,
-                messages: chatThreadData.messages,
-                shared: isShared,
-              })
-            );
-          } else if (!chatThread) {
-            dispatch(
-              addChatThread({
-                id,
-                chats: chatThreadData.chats,
-                messages: chatThreadData.messages,
-                shared: isShared,
-              })
-            );
-          }
-          setIsFetching(false);
-          return;
-        } else {
-          dispatch(removeChatThread(id));
+      if (!threadSnap.exists()) {
+        dispatch(removeChatThread(id));
+        setIsFetching(false);
+        return;
+      }
+
+      const threadData = threadSnap.data();
+      const isShared = threadData.userId !== indexUserId;
+
+      if (chatThread) {
+        if (isShared) {
+          dispatch(
+            updateChatThread({
+              id,
+              chats: threadData.chats,
+              messages: threadData.messages,
+              shared: isShared,
+            })
+          );
         }
+      } else {
+        dispatch(
+          addChatThread({
+            id,
+            chats: threadData.chats,
+            messages: threadData.messages,
+            shared: isShared,
+          })
+        );
       }
     } catch (error) {
       console.error("Error fetching chat thread:", error);
+    } finally {
+      setIsFetching(false);
     }
-    setIsFetching(false);
   }, [dispatch, id, chatThread]);
 
   useEffect(() => {
-    const fetchData = async () => {
-      setIsFetching(true);
-      if (!chatThread) {
-        await fetchChatThread();
-      } else if (chatThread.shared) {
-        await fetchChatThread();
-      } else {
-        setIsFetching(false);
-      }
-    };
-
-    fetchData();
-  }, []);
+    if (!chatThread || chatThread.shared) {
+      fetchChatThread();
+    } else {
+      setIsFetching(false);
+    }
+  }, [fetchChatThread, chatThread]);
 
   return { chatThread, isFetching };
 };

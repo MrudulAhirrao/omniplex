@@ -1,14 +1,20 @@
+// src/store/authSlice.ts
+
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { RootState } from "./store";
 
+// FIX: This interface was already correct, just confirming it
+export interface UserDetailsState {
+  uid: string;
+  name: string;
+  email: string;
+  profilePic: string;
+  isPro: boolean;
+}
+
 interface AuthState {
   authState: boolean;
-  userDetails: {
-    uid: string;
-    name: string;
-    email: string;
-    profilePic: string;
-  };
+  userDetails: UserDetailsState;
 }
 
 const initialState: AuthState = {
@@ -18,6 +24,7 @@ const initialState: AuthState = {
     name: "",
     email: "",
     profilePic: "",
+    isPro: false, 
   },
 };
 
@@ -30,14 +37,9 @@ const authSlice = createSlice({
     },
     setUserDetailsState: (
       state,
-      action: PayloadAction<{
-        uid: string;
-        name: string;
-        email: string;
-        profilePic: string;
-      }>
+      action: PayloadAction<Partial<UserDetailsState>> 
     ) => {
-      state.userDetails = action.payload;
+      state.userDetails = { ...state.userDetails, ...action.payload };
     },
     resetAuth: () => {
       return initialState;
