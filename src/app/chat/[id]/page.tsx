@@ -1,13 +1,15 @@
 import Chat from "@/components/Chat/Chat";
 import AuthWrapper from "../../AuthWrapper";
 import { Metadata } from "next";
+// import { Params } from "next/dist/shared/lib/router/utils"; // Optional helper
+import { ResolvingMetadata } from "next";
 
-type PageProps = {
-  params: { id: string };
-};
-
-export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
-  const id = params.id;
+// Next.js provides the correct typing for route params
+export async function generateMetadata(
+  { params }: { params: { id: string } },
+  _parent: ResolvingMetadata
+): Promise<Metadata> {
+  const { id } = params;
 
   if (!id) {
     return {
@@ -44,8 +46,9 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
   };
 }
 
-const ChatPage = ({ params }: PageProps) => {
-  const id = params.id;
+// No need for a custom PageProps type, just use the implicit params
+const ChatPage = ({ params }: { params: { id: string } }) => {
+  const { id } = params;
 
   return (
     <AuthWrapper>
