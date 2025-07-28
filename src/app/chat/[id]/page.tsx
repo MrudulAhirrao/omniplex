@@ -2,16 +2,13 @@ import Chat from "@/components/Chat/Chat";
 import AuthWrapper from "../../AuthWrapper";
 import { Metadata } from "next";
 
-type Props = {
+type PageProps = {
   params: { id: string };
-  searchParams: { [key: string]: string | string[] | undefined };
 };
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
   const id = params.id;
 
-  // FIX: Logic corrected to have a single, non-conflicting return path.
-  // This prevents unreachable code and should resolve the `params` error from the logs.
   if (!id) {
     return {
       title: "Chat",
@@ -47,7 +44,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-const ChatPage = ({ params }: Props) => {
+const ChatPage = ({ params }: PageProps) => {
   const id = params.id;
 
   return (
